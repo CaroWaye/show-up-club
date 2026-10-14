@@ -1,0 +1,4 @@
+node_modules/
+gym.db
+gym.db-*
+.DS_Store
