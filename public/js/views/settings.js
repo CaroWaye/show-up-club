@@ -48,18 +48,25 @@ export function SettingsView() {
     </article>
 
     <article class="card">
-      <span class="label">Account</span>
-      <button class="btn btn-ghost btn-block" data-action="logout">Log out</button>
-      <p class="muted small account-hint">
-        To change your password, run <code>./start set-password</code> on the server. That logs out every device.
+      <span class="label">Your data</span>
+      <p class="muted small backup-hint">
+        Everything is stored on this phone, nowhere else. Download a backup now and then: if Chrome's data for this
+        app is cleared, or you switch phones, the backup is how you get it all back.
       </p>
+      <div class="backup-actions">
+        <button class="btn btn-primary btn-block" data-action="downloadBackup">Download backup</button>
+        <label class="btn btn-ghost btn-block">
+          Restore from backup
+          <input class="sr-only" type="file" data-change="restoreBackup">
+        </label>
+      </div>
     </article>
 
     <article class="card about">
       <p class="script about-script">no ego lifting</p>
       <p class="muted small">
-        Show Up Club counts the days you show up, not how much you lift. All your data lives in
-        <code>gym.db</code>, a SQLite file next to the app, behind your password. No cloud.
+        Show Up Club counts the days you show up, not how much you lift. Your data never leaves this phone. No
+        accounts, no cloud.
       </p>
     </article>
   </section>`;

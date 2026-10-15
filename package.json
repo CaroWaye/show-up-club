@@ -1,15 +1,14 @@
 {
   "name": "show-up-club",
   "version": "1.0.0",
-  "description": "A gym consistency tracker: hit your weekly goal, keep the streak. SQLite + vanilla JS.",
+  "description": "A gym consistency tracker: hit your weekly goal, keep the streak. Installable web app; data stays on your phone (SQLite in the browser).",
   "type": "module",
   "private": true,
   "engines": {
-    "node": ">=22.13"
+    "node": ">=18"
   },
   "scripts": {
-    "start": "node --disable-warning=ExperimentalWarning server.js",
-    "dev": "node --watch --disable-warning=ExperimentalWarning server.js",
-    "set-password": "node --disable-warning=ExperimentalWarning server.js set-password"
+    "start": "node server.js",
+    "dev": "node --watch server.js"
   }
 }

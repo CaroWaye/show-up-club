@@ -4,7 +4,7 @@ import {
   saveDraft, deleteDraft, quickLog, addExercise, removeExercise, saveSettings, setGoal, currentGoal,
 } from './store.js';
 import { todayKey } from './dates.js';
-import { post } from './api.js';
+import { exportBackup, restoreBackup } from './backend.js';
 import { TopBar, Nav, Toast } from './views/chrome.js';
 import { HomeView } from './views/home.js';
 import { HistoryView } from './views/history.js';
@@ -19,7 +19,7 @@ function Main() {
   if (state.error.value && !state.ready.value) {
     return html`<div class="card empty" data-key="error">
       <p class="empty-emoji">💔</p>
-      <p><b>Can't reach the gym.</b> Is the server running? (<code>npm start</code>)</p>
+      <p><b>Couldn't open your data on this phone.</b> ${state.error.value}</p>
       <button class="btn btn-primary" data-action="retry">Try again</button>
     </div>`;
   }
@@ -88,9 +88,30 @@ const actions = {
   removeExercise: (el) => removeExercise(num(el)),
   goalStep: (el) => setGoal(currentGoal.value + num(el, 'step')),
   weekStart: (el) => saveSettings({ weekStart: num(el, 'value') }),
-  logout: async () => {
-    await post('/api/logout').catch(() => {});
-    location.replace('/login');
+  downloadBackup: async () => {
+    try {
+      const file = new Blob([await exportBackup()], { type: 'application/vnd.sqlite3' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(file);
+      link.download = `show-up-club-${todayKey()}.db`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
+      toast('Backup saved to Downloads ✦');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  },
+  restoreBackup: async (input) => {
+    const [file] = input.files;
+    input.value = ''; // picking the same file again should still trigger a change
+    if (!file || !confirm('Replace everything on this phone with this backup? This can’t be undone.')) return;
+    try {
+      await restoreBackup(await file.arrayBuffer());
+      await load();
+      toast('Backup restored ♥');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   },
   saveName: (el) => {
     const name = el.value.trim();
@@ -155,3 +176,6 @@ setInterval(tick, 60_000);
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && tick());
 
 load();
+
+// Cache the app so it opens offline (needs HTTPS, or localhost while developing).
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch((err) => console.warn(err));

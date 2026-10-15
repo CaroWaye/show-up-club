@@ -659,16 +659,10 @@ select.input {
 .stepper-unit { font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--berry); }
 .about { text-align: center; }
 .about-script { font-size: 26px; margin-bottom: 8px; }
-.account-hint { margin-top: 12px; }
-.account-hint code { white-space: nowrap; }
-
-/* ---------- login ---------- */
-
-.login { padding-top: 28px; padding-bottom: 40px; }
-.login .page-head { padding-top: 36px; }
-.login-card { padding: 24px 20px; }
-.login-card .field { margin-bottom: 12px; }
-.login-error { min-height: 20px; margin: 0 0 14px; font-size: 13.5px; font-weight: 700; color: var(--danger); }
+.backup-hint { margin: 0 0 16px; }
+.backup-actions { display: grid; gap: 10px; }
+.backup-actions label.btn { cursor: pointer; }
+.backup-actions label.btn:focus-within { outline: 2px solid var(--berry); outline-offset: 2px; }
 .sr-only {
   position: absolute;
   width: 1px;

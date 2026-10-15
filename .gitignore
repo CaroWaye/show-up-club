@@ -5,4 +5,3 @@ gym.db-*
 
 .env
 .cache/
-auth.json

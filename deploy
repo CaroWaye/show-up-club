@@ -1,4 +1,7 @@
 #!/bin/bash
+# Publishes the app (public/) to the website folder. It's plain files: your data lives on
+# your phone, never on the server.
+
 # Stop on the first failure, so we never print "complete" after an error
 set -euo pipefail
 
@@ -17,70 +20,40 @@ else
   exit 1
 fi
 
-# The Node.js build uploaded alongside the app, so the server needs nothing installed
-NODE_VERSION=v24.22.0
-
-SSH="ssh -p $REMOTE_PORT -i $REMOTE_SSH_KEY_PATH"
-
-# The app folder holds the database and password file, so it must never be one the
-# web server hands out directly (on cPanel, www is a shortcut to public_html)
-PUBLIC_FOLDER_ERROR="Error: REMOTE_DEST is inside the public web folder, where anyone could download your database and password file. Use a folder next to public_html instead, e.g. /home/<you>/show-up-club"
-case "$REMOTE_DEST" in
-  */public_html | */public_html/* | */www | */www/*) echo "$PUBLIC_FOLDER_ERROR"; exit 1 ;;
-esac
-
-echo "🚀 Starting deployment to $REMOTE_HOST..."
-
-# Create the destination folder (and any missing parents) if it isn't there yet,
-# and find out its real location and what kind of machine the server is
-REMOTE_INFO=$($SSH "$REMOTE_USER@$REMOTE_HOST" "mkdir -p '$REMOTE_DEST' && cd '$REMOTE_DEST' && pwd -P && uname -sm")
-REAL_DEST=$(sed -n 1p <<< "$REMOTE_INFO")
-REMOTE_SYSTEM=$(sed -n 2p <<< "$REMOTE_INFO")
-
-# Catch shortcuts that lead into the public folder under another name
-case "$REAL_DEST" in
-  */public_html | */public_html/*) echo "$PUBLIC_FOLDER_ERROR"; exit 1 ;;
-esac
-
-case "$REMOTE_SYSTEM" in
-  "Linux x86_64") NODE_PLATFORM=linux-x64 ;;
-  "Linux aarch64" | "Linux arm64") NODE_PLATFORM=linux-arm64 ;;
-  *)
-    echo "Error: no Node.js build for a '$REMOTE_SYSTEM' server"
+# The app gets a folder of its own, so a deploy can never touch the rest of your site
+case "${REMOTE_DEST%/}" in
+  */public_html | */www)
+    echo "Error: REMOTE_DEST is your whole website folder. Use a subfolder of its own, e.g. $REMOTE_DEST/show-up-club"
     exit 1
     ;;
 esac
 
-# Download Node once and keep it in .cache/, so later deploys skip this step
-NODE_DIR=".cache/node-$NODE_VERSION-$NODE_PLATFORM"
-if [ ! -x "$NODE_DIR/bin/node" ]; then
-  echo "⬇️  Downloading Node.js $NODE_VERSION for $NODE_PLATFORM..."
-  TARBALL="node-$NODE_VERSION-$NODE_PLATFORM.tar.xz"
-  mkdir -p "$NODE_DIR"
-  curl -fsSL -o ".cache/$TARBALL" "https://nodejs.org/dist/$NODE_VERSION/$TARBALL"
-  # Check the download against the checksum Node.js publishes
-  curl -fsSL "https://nodejs.org/dist/$NODE_VERSION/SHASUMS256.txt" | grep " $TARBALL\$" | (cd .cache && shasum -a 256 -c -)
-  tar -xJf ".cache/$TARBALL" -C "$NODE_DIR" --strip-components 1 "node-$NODE_VERSION-$NODE_PLATFORM/bin/node"
-  rm ".cache/$TARBALL"
-fi
-
-# Everything the server needs to run (the database is created on first start).
-# $NODE_DIR/bin lands on the server as bin/node.
-FILES=(server.js db.js auth.js seed.js package.json README.md start public "$NODE_DIR/bin")
-
-# Never touch the live database or password on the server, even with --delete
-rsync -avz --delete \
-  --exclude 'gym.db*' \
-  --exclude 'auth.json' \
-  --exclude '.DS_Store' \
-  -e "$SSH" \
-  "${FILES[@]}" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DEST/"
-
-# Make sure the uploaded Node actually runs on the server
-if ! $SSH "$REMOTE_USER@$REMOTE_HOST" "'$REMOTE_DEST/bin/node' -v"; then
-  echo "Error: Node.js was uploaded but won't run on the server (it needs glibc 2.28 or newer)"
+# The installed app only works offline with files listed in public/sw.js, so check none are missing
+MISSING=$(cd public && find . -type f ! -name sw.js ! -name .DS_Store ! -name .show-up-club ! -name '*LICENSE*' | sed 's|^\./||' | sort |
+  while read -r file; do grep -qF "'$file'" sw.js || echo "  $file"; done)
+if [ -n "$MISSING" ]; then
+  echo "Error: add these to APP_FILES in public/sw.js, or the app won't have them offline:"
+  echo "$MISSING"
   exit 1
 fi
 
-echo "✅ Deployment complete! Start it on the server with: $REMOTE_DEST/start"
-echo "   First time? Set your password before starting: $REMOTE_DEST/start set-password"
+SSH="ssh -p $REMOTE_PORT -i $REMOTE_SSH_KEY_PATH"
+
+echo "🚀 Starting deployment to $REMOTE_HOST..."
+
+# Only deploy into a new or empty folder, or one a previous deploy made (it has the
+# .show-up-club marker file). Anything else might be someone's files, so leave it alone.
+if ! $SSH "$REMOTE_USER@$REMOTE_HOST" \
+  "mkdir -p '$REMOTE_DEST' && cd '$REMOTE_DEST' && { [ -f .show-up-club ] || [ -z \"\$(ls -A)\" ]; }"; then
+  echo "Error: $REMOTE_DEST already has files that weren't put there by this script."
+  echo "Nothing was changed. Pick a different REMOTE_DEST, or empty that folder yourself first."
+  exit 1
+fi
+
+# The folder becomes an exact copy of public/; nothing outside it is touched.
+rsync -avz --delete \
+  --exclude '.DS_Store' \
+  -e "$SSH" \
+  public/ "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DEST/"
+
+echo "✅ Deployment complete! Open https://<your domain>/$(basename "$REMOTE_DEST")/ on your phone in Chrome, then ⋮ → Install app."

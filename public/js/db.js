@@ -1,4 +1,3 @@
-import { DatabaseSync } from 'node:sqlite';
 import { MUSCLE_GROUPS } from './seed.js';
 
 const SCHEMA = `
@@ -60,9 +59,9 @@ const BASELINE = '0000-01-01';
 export class NotFound extends Error {}
 export class Conflict extends Error {}
 
-export function openDb(file) {
-  const db = new DatabaseSync(file);
-  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+// Takes an open connection (see sqlite.js), brings its schema and built-in data up to date.
+export function openDb(db) {
+  db.exec('PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
   seed(db);
   return createRepo(db);

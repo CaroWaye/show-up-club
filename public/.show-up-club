@@ -1,0 +1,2 @@
+This folder is managed by Show Up Club's ./deploy script, which replaces everything in it on each deploy.
+Don't keep other files here.
