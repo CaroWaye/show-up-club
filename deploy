@@ -1,0 +1,86 @@
+#!/bin/bash
+# Stop on the first failure, so we never print "complete" after an error
+set -euo pipefail
+
+# Run from the project folder, wherever the script is called from
+cd "$(dirname "$0")"
+
+# Check if the .env file exists
+if [ -f .env ]; then
+  # Enable auto-export
+  set -a
+  source .env
+  # Disable auto-export
+  set +a
+else
+  echo "Error: .env file not found!"
+  exit 1
+fi
+
+# The Node.js build uploaded alongside the app, so the server needs nothing installed
+NODE_VERSION=v24.22.0
+
+SSH="ssh -p $REMOTE_PORT -i $REMOTE_SSH_KEY_PATH"
+
+# The app folder holds the database and password file, so it must never be one the
+# web server hands out directly (on cPanel, www is a shortcut to public_html)
+PUBLIC_FOLDER_ERROR="Error: REMOTE_DEST is inside the public web folder, where anyone could download your database and password file. Use a folder next to public_html instead, e.g. /home/<you>/show-up-club"
+case "$REMOTE_DEST" in
+  */public_html | */public_html/* | */www | */www/*) echo "$PUBLIC_FOLDER_ERROR"; exit 1 ;;
+esac
+
+echo "🚀 Starting deployment to $REMOTE_HOST..."
+
+# Create the destination folder (and any missing parents) if it isn't there yet,
+# and find out its real location and what kind of machine the server is
+REMOTE_INFO=$($SSH "$REMOTE_USER@$REMOTE_HOST" "mkdir -p '$REMOTE_DEST' && cd '$REMOTE_DEST' && pwd -P && uname -sm")
+REAL_DEST=$(sed -n 1p <<< "$REMOTE_INFO")
+REMOTE_SYSTEM=$(sed -n 2p <<< "$REMOTE_INFO")
+
+# Catch shortcuts that lead into the public folder under another name
+case "$REAL_DEST" in
+  */public_html | */public_html/*) echo "$PUBLIC_FOLDER_ERROR"; exit 1 ;;
+esac
+
+case "$REMOTE_SYSTEM" in
+  "Linux x86_64") NODE_PLATFORM=linux-x64 ;;
+  "Linux aarch64" | "Linux arm64") NODE_PLATFORM=linux-arm64 ;;
+  *)
+    echo "Error: no Node.js build for a '$REMOTE_SYSTEM' server"
+    exit 1
+    ;;
+esac
+
+# Download Node once and keep it in .cache/, so later deploys skip this step
+NODE_DIR=".cache/node-$NODE_VERSION-$NODE_PLATFORM"
+if [ ! -x "$NODE_DIR/bin/node" ]; then
+  echo "⬇️  Downloading Node.js $NODE_VERSION for $NODE_PLATFORM..."
+  TARBALL="node-$NODE_VERSION-$NODE_PLATFORM.tar.xz"
+  mkdir -p "$NODE_DIR"
+  curl -fsSL -o ".cache/$TARBALL" "https://nodejs.org/dist/$NODE_VERSION/$TARBALL"
+  # Check the download against the checksum Node.js publishes
+  curl -fsSL "https://nodejs.org/dist/$NODE_VERSION/SHASUMS256.txt" | grep " $TARBALL\$" | (cd .cache && shasum -a 256 -c -)
+  tar -xJf ".cache/$TARBALL" -C "$NODE_DIR" --strip-components 1 "node-$NODE_VERSION-$NODE_PLATFORM/bin/node"
+  rm ".cache/$TARBALL"
+fi
+
+# Everything the server needs to run (the database is created on first start).
+# $NODE_DIR/bin lands on the server as bin/node.
+FILES=(server.js db.js auth.js seed.js package.json README.md start public "$NODE_DIR/bin")
+
+# Never touch the live database or password on the server, even with --delete
+rsync -avz --delete \
+  --exclude 'gym.db*' \
+  --exclude 'auth.json' \
+  --exclude '.DS_Store' \
+  -e "$SSH" \
+  "${FILES[@]}" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DEST/"
+
+# Make sure the uploaded Node actually runs on the server
+if ! $SSH "$REMOTE_USER@$REMOTE_HOST" "'$REMOTE_DEST/bin/node' -v"; then
+  echo "Error: Node.js was uploaded but won't run on the server (it needs glibc 2.28 or newer)"
+  exit 1
+fi
+
+echo "✅ Deployment complete! Start it on the server with: $REMOTE_DEST/start"
+echo "   First time? Set your password before starting: $REMOTE_DEST/start set-password"

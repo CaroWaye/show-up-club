@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server.js",
-    "dev": "node --watch --disable-warning=ExperimentalWarning server.js"
+    "dev": "node --watch --disable-warning=ExperimentalWarning server.js",
+    "set-password": "node --disable-warning=ExperimentalWarning server.js set-password"
   }
 }

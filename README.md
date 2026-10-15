@@ -8,6 +8,7 @@ A gym tracker that cares about **showing up**, not lifting heavier. Set a weekly
 Needs Node 22.13+ (uses the built-in `node:sqlite` — no npm install).
 
 ```bash
+npm run set-password   # once, before the first start (also how you change it)
 npm start        # → http://127.0.0.1:3456
 npm run dev      # same, restarts on file changes
 ```
@@ -32,6 +33,7 @@ your goal applies from the current week on; past weeks keep the goal they had.
 ```
 server.js          tiny HTTP server + JSON API (binds to 127.0.0.1)
 db.js              schema, seeding, queries
+auth.js            password (auth.json), session cookie, login rate limit
 seed.js            built-in muscle groups & exercises
 public/js/
   reactive.js      signals / computed / effect + DOM morphing (~150 lines)

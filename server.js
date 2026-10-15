@@ -1,14 +1,46 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb, NotFound, Conflict } from './db.js';
+import {
+  loadAuth, verifyPassword, sessionCookie, clearCookie, isSignedIn, clientId, isLockedOut, recordFailure,
+  clearFailures, setPasswordCommand,
+} from './auth.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(ROOT, 'public');
 const PORT = Number(process.env.PORT) || 3456;
 const HOST = process.env.HOST || '127.0.0.1';
 const DB_PATH = process.env.DB_PATH || path.join(ROOT, 'gym.db');
+const AUTH_PATH = process.env.AUTH_PATH || path.join(ROOT, 'auth.json');
+
+if (process.argv[2] === 'set-password') {
+  try {
+    await setPasswordCommand(AUTH_PATH);
+    process.exit(0);
+  } catch (err) {
+    console.error(err.message);
+    process.exit(1);
+  }
+}
+
+// Re-read auth.json when it changes, so a new password applies without a restart.
+let auth = null;
+let authMtime = 0;
+function currentAuth() {
+  const mtime = statSync(AUTH_PATH, { throwIfNoEntry: false })?.mtimeMs ?? 0;
+  if (mtime !== authMtime) [auth, authMtime] = [loadAuth(AUTH_PATH), mtime];
+  return auth;
+}
+
+if (!currentAuth()) {
+  console.error('\n  No password set yet. Set one first, then start the app again:');
+  console.error('    on your computer:  npm run set-password');
+  console.error('    on the server:     ./start set-password\n');
+  process.exit(1);
+}
 
 const repo = openDb(DB_PATH);
 
@@ -135,8 +167,31 @@ async function readBody(req) {
   }
 }
 
+function redirect(res, location) {
+  res.writeHead(302, { Location: location, 'Cache-Control': 'no-store' });
+  res.end();
+}
+
+async function login(req, res) {
+  const client = clientId(req);
+  if (isLockedOut(client)) return send(res, 429, { error: 'Too many tries. Wait 15 minutes and try again.' });
+  // Count the attempt before checking it, so a burst of parallel guesses can't slip past the limit.
+  recordFailure(client);
+  const password = (await readBody(req))?.password;
+  if (typeof password !== 'string' || password.length > 200 || !(await verifyPassword(currentAuth(), password))) {
+    return send(res, 401, { error: "That's not it. Try again." });
+  }
+  clearFailures(client);
+  res.setHeader('Set-Cookie', sessionCookie(currentAuth(), req));
+  send(res, 200, { ok: true });
+}
+
+// What the login page needs before you're signed in
+const OPEN_PATHS = new Set(['/login', '/css/styles.css', '/js/login.js']);
+
 async function serveStatic(pathname, res) {
-  const rel = pathname === '/' ? 'index.html' : decodeURIComponent(pathname).replace(/^\/+/, '');
+  const rel =
+    pathname === '/' ? 'index.html' : pathname === '/login' ? 'login.html' : decodeURIComponent(pathname).replace(/^\/+/, '');
   const file = path.normalize(path.join(PUBLIC, rel));
   if (!file.startsWith(PUBLIC + path.sep)) return send(res, 403, { error: 'Forbidden' });
   try {
@@ -154,12 +209,28 @@ async function serveStatic(pathname, res) {
 const server = http.createServer(async (req, res) => {
   const { pathname } = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
 
-  if (!pathname.startsWith('/api/')) {
-    if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'Method not allowed' });
-    return serveStatic(pathname, res);
-  }
-
   try {
+    if (pathname === '/api/login' && req.method === 'POST') return await login(req, res);
+    if (pathname === '/api/logout' && req.method === 'POST') {
+      res.setHeader('Set-Cookie', clearCookie(req));
+      return send(res, 200, { ok: true });
+    }
+
+    const signedIn = isSignedIn(currentAuth(), req);
+    if (!signedIn && !OPEN_PATHS.has(pathname)) {
+      if (pathname === '/' || pathname === '/index.html') return redirect(res, '/login');
+      return send(res, 401, { error: 'Please log in' });
+    }
+    if (signedIn && pathname === '/login') return redirect(res, '/');
+
+    if (!pathname.startsWith('/api/')) {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'Method not allowed' });
+      return await serveStatic(pathname, res);
+    }
+
+    // Opening the app renews the session, so you stay logged in while you keep using it.
+    if (pathname === '/api/bootstrap') res.setHeader('Set-Cookie', sessionCookie(currentAuth(), req));
+
     for (const [method, pattern, handler] of routes) {
       const match = pathname.match(pattern);
       if (!match || method !== req.method) continue;

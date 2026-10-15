@@ -2,3 +2,7 @@ node_modules/
 gym.db
 gym.db-*
 .DS_Store
+
+.env
+.cache/
+auth.json

@@ -47,11 +47,19 @@ export function SettingsView() {
       </div>
     </article>
 
+    <article class="card">
+      <span class="label">Account</span>
+      <button class="btn btn-ghost btn-block" data-action="logout">Log out</button>
+      <p class="muted small account-hint">
+        To change your password, run <code>./start set-password</code> on the server. That logs out every device.
+      </p>
+    </article>
+
     <article class="card about">
       <p class="script about-script">no ego lifting</p>
       <p class="muted small">
         Show Up Club counts the days you show up, not how much you lift. All your data lives in
-        <code>gym.db</code>, a SQLite file next to the app. No accounts, no cloud.
+        <code>gym.db</code>, a SQLite file next to the app, behind your password. No cloud.
       </p>
     </article>
   </section>`;

@@ -4,6 +4,7 @@ import {
   saveDraft, deleteDraft, quickLog, addExercise, removeExercise, saveSettings, setGoal, currentGoal,
 } from './store.js';
 import { todayKey } from './dates.js';
+import { post } from './api.js';
 import { TopBar, Nav, Toast } from './views/chrome.js';
 import { HomeView } from './views/home.js';
 import { HistoryView } from './views/history.js';
@@ -87,6 +88,10 @@ const actions = {
   removeExercise: (el) => removeExercise(num(el)),
   goalStep: (el) => setGoal(currentGoal.value + num(el, 'step')),
   weekStart: (el) => saveSettings({ weekStart: num(el, 'value') }),
+  logout: async () => {
+    await post('/api/logout').catch(() => {});
+    location.replace('/login');
+  },
   saveName: (el) => {
     const name = el.value.trim();
     if (name !== state.settings.value.name) saveSettings({ name }).then(() => toast(name ? `Hey ${name} ♥` : 'Name cleared'));
